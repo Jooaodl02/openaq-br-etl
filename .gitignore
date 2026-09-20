@@ -1,0 +1,25 @@
+/.claude
+/arquivos_historico_csv
+/contexto_escolha (2).MD
+/openaq.txt
+/ref_terraform.txt
+/tf_etl_jooaodl_accessKeys.csv
+
+# Terraform
+# .terraform/ guarda os binarios de provider (~850 MB) e e recriado pelo init
+infra/.terraform/
+# o state pode conter valores sensiveis dos recursos
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.tfplan
+# artefato de build da Lambda, gerado pelo archive_file
+infra/lambda.zip
+
+# Python
+__pycache__/
+*.pyc
+
+#outros
+*.csv
+*.ps1
+*.txt
