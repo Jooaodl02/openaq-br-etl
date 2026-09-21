@@ -17,6 +17,7 @@ import gzip
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -52,7 +53,11 @@ def get_api_key():
 
 
 def api_get(path, params=None):
-    """GET na OpenAQ, devolvendo a lista de results."""
+    """GET na OpenAQ, devolvendo a lista de results.
+
+    404 vira lista vazia: a estacao ou o sensor saiu do cadastro da API e o
+    chamador apenas pula. Os outros erros sobem, para a execucao falhar alto.
+    """
     url = f"{API}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -60,8 +65,13 @@ def api_get(path, params=None):
     time.sleep(INTERVALO)  # respeita o rate limit da API
 
     req = urllib.request.Request(url, headers={"X-API-Key": get_api_key()})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp).get("results", [])
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp).get("results", [])
+    except urllib.error.HTTPError as erro:
+        if erro.code == 404:
+            return []
+        raise
 
 
 def montar_linha(medicao, location, sensor):
