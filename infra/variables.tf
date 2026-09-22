@@ -56,7 +56,7 @@ variable "api_prefix" {
 variable "bronze_prefix" {
   type        = string
   description = "Prefixo da Bronze: o historico CSV ja convertido para Parquet"
-  default     = "bronze/historico_openaq"
+  default     = "bronze"
 }
 
 variable "days_back" {
