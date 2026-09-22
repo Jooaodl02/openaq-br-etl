@@ -26,7 +26,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 }
 
 # Permissoes especificas deste job, no menor escopo possivel:
-# gravar apenas dentro do prefixo da Bronze e ler apenas este segredo.
+# gravar apenas dentro do prefixo do bruto da API e ler apenas este segredo.
 resource "aws_iam_role_policy" "lambda_openaq" {
   name = "${var.lambda_function_name}-s3-secrets"
   role = aws_iam_role.lambda_role.id
@@ -35,10 +35,10 @@ resource "aws_iam_role_policy" "lambda_openaq" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "GravarNaBronze"
+        Sid      = "GravarArquivosDaApi"
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "${aws_s3_bucket.bucket-etl.arn}/${var.bronze_prefix}/*"
+        Resource = "${aws_s3_bucket.bucket-etl.arn}/${var.api_prefix}/*"
       },
       {
         Sid      = "LerChaveDaApi"

@@ -5,7 +5,7 @@ Para cada estacao (location_id), busca as medicoes dos ultimos DAYS_BACK dias
 e grava um arquivo NDJSON gzipado, achatado no mesmo schema do CSV historico.
 
 Saida:
-  s3://<bucket>/bronze/openaq/ingestion_date=YYYY-MM-DD/location-<id>.ndjson.gz
+  s3://<bucket>/arquivos_api/ingestion_date=YYYY-MM-DD/location-<id>.ndjson.gz
 
 A chave da API vem do Secrets Manager, num segredo com o formato:
   {"api_key": "..."}
@@ -33,7 +33,7 @@ INTERVALO = 60.0 / 55
 BUCKET = os.environ["BUCKET_NAME"]
 SECRET_NAME = os.environ["SECRET_NAME"]
 LOCATION_IDS = os.environ["LOCATION_IDS"].split(",")
-PREFIX = os.environ.get("PREFIX", "bronze/openaq")
+PREFIX = os.environ.get("PREFIX", "arquivos_api")
 DAYS_BACK = int(os.environ.get("DAYS_BACK", "3"))
 
 s3 = boto3.client("s3")

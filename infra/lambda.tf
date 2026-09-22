@@ -34,7 +34,7 @@ resource "aws_lambda_function" "openaq_ingestao" {
       BUCKET_NAME  = aws_s3_bucket.bucket-etl.id
       SECRET_NAME  = aws_secretsmanager_secret.openaq_api_key.name
       LOCATION_IDS = join(",", var.openaq_location_ids)
-      PREFIX       = var.bronze_prefix
+      PREFIX       = var.api_prefix
       DAYS_BACK    = var.days_back
     }
   }

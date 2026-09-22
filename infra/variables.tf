@@ -47,10 +47,16 @@ variable "openaq_location_ids" {
   description = "IDs das estacoes OpenAQ ingeridas pela Lambda"
 }
 
+variable "api_prefix" {
+  type        = string
+  description = "Prefixo onde a Lambda grava o bruto da API. Tambem limita a policy do S3"
+  default     = "arquivos_api"
+}
+
 variable "bronze_prefix" {
   type        = string
-  description = "Prefixo da camada Bronze no bucket. Tambem limita a policy do S3"
-  default     = "bronze/openaq"
+  description = "Prefixo da Bronze: o historico CSV ja convertido para Parquet"
+  default     = "bronze/historico_openaq"
 }
 
 variable "days_back" {
@@ -75,4 +81,41 @@ variable "log_retention_days" {
   type        = number
   description = "Dias de retencao dos logs da Lambda no CloudWatch"
   default     = 14
+}
+
+variable "nome_base_historico" {
+  type        = string
+  description = "Nome da base historica no Glue Catalog"
+  default     = "historico_openaq"
+}
+
+variable "nome_base_api" {
+  type        = string
+  description = "Nome da base API no Glue Catalog"
+  default     = "api_openaq"
+}
+
+variable "nome_base" {
+  type        = string
+  description = "Nome da base API no Glue Catalog"
+  default     = "openaq"
+}
+
+
+variable "database_bronze" {
+  type        = string
+  description = "Nome da base bronze no Glue Catalog"
+  default     = "bronze_openaq"
+}
+
+variable "database_silver" {
+  type        = string
+  description = "Nome da base prata no Glue Catalog"
+  default     = "silver_openaq"
+}
+
+variable "database_gold" {
+  type        = string
+  description = "Nome da base ouro no Glue Catalog"
+  default     = "gold_openaq"
 }
