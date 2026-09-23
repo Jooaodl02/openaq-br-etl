@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -7,13 +9,11 @@ terraform {
   }
 }
 
-# Configure the AWS Provider
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
 
-  # aplicadas automaticamente em todo recurso que suporta tags.
-  # servem para filtrar o custo deste projeto no Cost Explorer.
+  # cai em todo recurso que aceita tag, da pra filtrar o custo por aqui
   default_tags {
     tags = {
       Project   = var.project_name

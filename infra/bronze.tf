@@ -1,12 +1,12 @@
+# Bronze: database, tabela e o job que roda todo dia.
+
 resource "aws_glue_catalog_database" "bronze" {
   name         = var.database_bronze
   description  = "Camada bronze do ETL OpenAQ"
   location_uri = "s3://${aws_s3_bucket.bucket-etl.bucket}/bronze/"
 }
 
-
-# Historico CSV ja convertido para Parquet.
-# Tabela externa: o Glue so guarda o schema, os dados ficam no S3.
+# tabela externa: o Glue guarda so o schema, o dado fica no S3
 resource "aws_glue_catalog_table" "openaq_bronze" {
   name          = var.nome_base
   database_name = aws_glue_catalog_database.bronze.name
@@ -17,8 +17,8 @@ resource "aws_glue_catalog_table" "openaq_bronze" {
     classification = "parquet"
   }
 
-  # coluna de particao: o valor vem do caminho no S3 (data_ingestao=YYYY-MM-DD/),
-  # por isso ela NAO pode aparecer tambem em columns
+  # o valor vem do caminho no S3 (data_ingestao=YYYY-MM-DD/), entao nao pode
+  # aparecer tambem em columns
   partition_keys {
     name = "data_ingestao"
     type = "date"
@@ -33,8 +33,8 @@ resource "aws_glue_catalog_table" "openaq_bronze" {
       serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
     }
 
-    # bigint, e nao int: pandas/pyarrow escrevem int64 por padrao e o Athena
-    # rejeita o arquivo se o tipo declarado nao bater com o tipo fisico
+    # bigint e nao int: o pyarrow escreve int64 e o Athena rejeita o arquivo
+    # se o tipo declarado nao bater com o fisico
     columns {
       name = "location_id"
       type = "bigint"
@@ -85,4 +85,28 @@ resource "aws_glue_catalog_table" "openaq_bronze" {
       type = "string"
     }
   }
+}
+
+module "bronze_processamento_diario" {
+  source = "./modules/glue_job"
+
+  job_name       = var.glue_job_name_bronze_diario
+  description    = "Le o bruto da API OpenAQ do dia e grava na camada bronze"
+  role_arn       = aws_iam_role.glue_job_role.arn
+  scripts_bucket = aws_s3_bucket.bucket-etl.id
+  scripts_prefix = var.glue_scripts_prefix
+  script_path    = "scr/bronze/processamento_diario.py"
+
+  # lidos pelo getResolvedOptions no processamento_diario.py
+  job_arguments = {
+    "--BUCKET_NAME"     = aws_s3_bucket.bucket-etl.id
+    "--API_PREFIX"      = var.api_prefix
+    "--DATABASE_BRONZE" = aws_glue_catalog_database.bronze.name
+    "--TABLE_NAME"      = aws_glue_catalog_table.openaq_bronze.name
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.glue_service,
+    aws_iam_role_policy.glue_job_s3,
+  ]
 }
