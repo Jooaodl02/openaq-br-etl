@@ -1,16 +1,8 @@
 """
-Ingestao da API OpenAQ v3 -> arquivos no S3 prontos para o Glue.
+Ingestao da API OpenAQ v3 -> NDJSON gzipado no S3, pronto para o Glue.
 
-Para cada estacao (location_id), busca as medicoes dos ultimos DAYS_BACK dias
-e grava um arquivo NDJSON gzipado, achatado no mesmo schema do CSV historico.
-
-Saida:
-  s3://<bucket>/arquivos_api/ingestion_date=YYYY-MM-DD/location-<id>.ndjson.gz
-
-A chave da API vem do Secrets Manager, num segredo com o formato:
-  {"api_key": "..."}
-
-Usa apenas stdlib + boto3, que ja vem no runtime da Lambda.
+Saida: s3://<bucket>/arquivos_api/ingestion_date=YYYY-MM-DD/location-<id>.ndjson.gz
+Segredo esperado: {"api_key": "..."}
 """
 
 import gzip
@@ -26,8 +18,7 @@ import boto3
 
 API = "https://api.openaq.org/v3"
 
-# a chave gratuita da OpenAQ permite ~60 req/min; ficamos um pouco abaixo disso.
-# com 52 estacoes sao ~212 chamadas, entao a pausa domina o tempo de execucao.
+# a chave gratuita da OpenAQ da ~60 req/min, ficamos um pouco abaixo
 INTERVALO = 60.0 / 55
 
 BUCKET = os.environ["BUCKET_NAME"]
@@ -39,12 +30,11 @@ DAYS_BACK = int(os.environ.get("DAYS_BACK", "3"))
 s3 = boto3.client("s3")
 secrets = boto3.client("secretsmanager")
 
-# guarda a chave entre invocacoes quentes, para nao pagar um GetSecretValue por execucao
+# guarda a chave entre invocacoes quentes, um GetSecretValue por container
 _api_key = None
 
 
 def get_api_key():
-    """Le a chave da OpenAQ no Secrets Manager (uma vez por container)."""
     global _api_key
     if _api_key is None:
         segredo = secrets.get_secret_value(SecretId=SECRET_NAME)["SecretString"]
@@ -53,16 +43,12 @@ def get_api_key():
 
 
 def api_get(path, params=None):
-    """GET na OpenAQ, devolvendo a lista de results.
-
-    404 vira lista vazia: a estacao ou o sensor saiu do cadastro da API e o
-    chamador apenas pula. Os outros erros sobem, para a execucao falhar alto.
-    """
+    """GET na OpenAQ. 404 vira lista vazia, o resto sobe e falha alto."""
     url = f"{API}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
 
-    time.sleep(INTERVALO)  # respeita o rate limit da API
+    time.sleep(INTERVALO)
 
     req = urllib.request.Request(url, headers={"X-API-Key": get_api_key()})
     try:
@@ -75,7 +61,7 @@ def api_get(path, params=None):
 
 
 def montar_linha(medicao, location, sensor):
-    """Achata a medicao no schema do CSV historico."""
+    """Achata a medicao no mesmo schema do CSV historico."""
     periodo = medicao.get("period") or {}
     datahora = periodo.get("datetimeTo") or {}
     parametro = medicao.get("parameter") or {}
@@ -95,14 +81,14 @@ def montar_linha(medicao, location, sensor):
 
 
 def salvar_no_s3(linhas, key):
-    """Grava as linhas como NDJSON gzipado: um registro por linha."""
+    """NDJSON gzipado: um registro por linha."""
     corpo = "".join(json.dumps(linha, ensure_ascii=False) + "\n" for linha in linhas)
     s3.put_object(Bucket=BUCKET, Key=key, Body=gzip.compress(corpo.encode("utf-8")))
 
 
 def lambda_handler(event, context):
     agora = datetime.now(timezone.utc)
-    # janela deslizante: o CSV historico so atualiza a cada ~72h
+    # janela deslizante, a OpenAQ atrasa ~72h
     inicio = agora - timedelta(days=DAYS_BACK)
 
     janela = {
