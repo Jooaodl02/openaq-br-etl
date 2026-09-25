@@ -95,18 +95,12 @@ def salvar_no_s3(linhas, key):
 
 
 def lambda_handler(event, context):
-<<<<<<< HEAD
     # tudo em horario de Sao Paulo: a janela e a particao seguem o dia local
     agora = datetime.now(FUSO_BR)
     # janela deslizante, a OpenAQ atrasa ~72h
     inicio = (agora - timedelta(days=DAYS_BACK)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-=======
-    agora = datetime.now(timezone.utc)
-    # janela deslizante, a OpenAQ atrasa ~72h
-    inicio = agora - timedelta(days=DAYS_BACK)
->>>>>>> e59852b9ccf3fddeeab5eb9c179bbfebf179d2a0
 
     janela = {
         "datetime_from": inicio.isoformat(timespec="seconds"),
