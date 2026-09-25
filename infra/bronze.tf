@@ -101,6 +101,7 @@ module "bronze_processamento_diario" {
   job_arguments = {
     "--BUCKET_NAME"     = aws_s3_bucket.bucket-etl.id
     "--API_PREFIX"      = var.api_prefix
+    "--BRONZE_PREFIX"   = var.bronze_prefix
     "--DATABASE_BRONZE" = aws_glue_catalog_database.bronze.name
     "--TABLE_NAME"      = aws_glue_catalog_table.openaq_bronze.name
   }
