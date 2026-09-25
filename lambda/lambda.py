@@ -16,6 +16,14 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 
+try:
+    from zoneinfo import ZoneInfo
+
+    FUSO_BR = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    # runtime sem tzdata: o Brasil nao usa mais horario de verao desde 2019
+    FUSO_BR = timezone(timedelta(hours=-3))
+
 API = "https://api.openaq.org/v3"
 
 # a chave gratuita da OpenAQ da ~60 req/min, ficamos um pouco abaixo
@@ -87,13 +95,16 @@ def salvar_no_s3(linhas, key):
 
 
 def lambda_handler(event, context):
-    agora = datetime.now(timezone.utc)
+    # tudo em horario de Sao Paulo: a janela e a particao seguem o dia local
+    agora = datetime.now(FUSO_BR)
     # janela deslizante, a OpenAQ atrasa ~72h
-    inicio = agora - timedelta(days=DAYS_BACK)
+    inicio = (agora - timedelta(days=DAYS_BACK)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
     janela = {
-        "datetime_from": inicio.strftime("%Y-%m-%dT00:00:00Z"),
-        "datetime_to": agora.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "datetime_from": inicio.isoformat(timespec="seconds"),
+        "datetime_to": agora.isoformat(timespec="seconds"),
         "limit": 1000,
     }
     ingestion_date = agora.strftime("%Y-%m-%d")
