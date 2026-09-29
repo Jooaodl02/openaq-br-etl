@@ -7,11 +7,21 @@ resource "aws_glue_catalog_database" "silver" {
 }
 
 # Iceberg, e nao external table como na bronze: a carga diaria e incremental
-# via MERGE INTO, que precisa de row-level operation na tabela, e o Iceberg
-# resolve isso sem MSCK nem reparticionamento manual. o open_table_format_input
-# manda o Glue criar o metadata inicial (o metadata.json em
-# silver/openaq/metadata/), senao a tabela nasce sem metadata_location e o
-# Spark nao consegue abrir.
+# via MERGE INTO, que precisa de row-level operation na tabela. o
+# open_table_format_input manda o Glue criar o metadata inicial (o
+# metadata.json em silver/openaq/metadata/), senao a tabela nasce sem
+# metadata_location e o Spark nao consegue abrir.
+#
+# sem particao, de proposito. a tabela inteira cabe em algumas dezenas de MB
+# (1,2 mi de linhas no historico, poucos milhares por dia), e o Iceberg guarda
+# min/max de cada coluna por arquivo nos manifests: como a escrita e
+# cronologica, um filtro por anomesdia ja pula arquivo pelo estatistico.
+# declarar particao aqui daria centenas de arquivos de dezenas de KB e um
+# metadado do tamanho do dado. se o volume crescer, "ALTER TABLE ... ADD
+# PARTITION FIELD anomesdia" particiona sem reescrever o que ja existe.
+#
+# o Glue tambem nao aceitaria: CreateTable recusa PartitionKeys em tabela
+# Iceberg, a spec de particao so entra por DDL do Spark ou do Athena.
 resource "aws_glue_catalog_table" "openaq_silver" {
   name          = var.nome_base
   database_name = aws_glue_catalog_database.silver.name
@@ -22,19 +32,6 @@ resource "aws_glue_catalog_table" "openaq_silver" {
       metadata_operation = "CREATE"
       version            = "2"
     }
-  }
-
-  # anomesdia primeiro: e o filtro natural das consultas (recorte por dia da
-  # medicao). data_ingestao vem depois, para separar o que cada execucao trouxe
-  # e permitir reprocessar uma ingestao sem varrer a tabela toda.
-  partition_keys {
-    name = "anomesdia"
-    type = "int"
-  }
-
-  partition_keys {
-    name = "data_ingestao"
-    type = "date"
   }
 
   storage_descriptor {
@@ -97,11 +94,27 @@ resource "aws_glue_catalog_table" "openaq_silver" {
       name = "tipo_ingestao"
       type = "string"
     }
+
+    # anomesdia sai de data_hora e data_ingestao vem da bronze. sao colunas
+    # comuns: no Iceberg nao existe a separacao entre coluna e chave de
+    # particao que a bronze tem
+    columns {
+      name = "anomesdia"
+      type = "int"
+    }
+
+    columns {
+      name = "data_ingestao"
+      type = "date"
+    }
   }
 
-  # cada commit do Spark troca o metadata_location da tabela. sem o ignore, todo
-  # plan depois de uma execucao acusa drift e quer reverter para o metadata que
-  # o Terraform criou, o que apagaria o historico de snapshots
+  # daqui pra frente a tabela e do Iceberg, nao do Terraform: cada commit do
+  # Spark reescreve o metadata_location nos parameters e o espelho das colunas
+  # no storage_descriptor. sem o ignore, todo plan depois de uma execucao quer
+  # reverter para o que este arquivo diz e apagaria o historico de snapshots.
+  # o bloco acima e o bootstrap da tabela; mudanca de schema depois disso vai
+  # por ALTER TABLE, nao por apply
   lifecycle {
     ignore_changes = [
       parameters,

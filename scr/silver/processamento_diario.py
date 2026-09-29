@@ -177,10 +177,11 @@ df_lote.createOrReplaceTempView("lote")
 # MERGE INTO no lugar de anti-join + append: a chave da silver e
 # (id_sensor, data_hora), e so entra o que ainda nao esta la.
 #
-# anomesdia vem no ON junto da chave, e e a primeira particao da tabela. com
-# ele o Iceberg descobre no plano quais arquivos do destino podem colidir com
-# o lote e le somente esses, em vez da tabela inteira. ele nao faz parte da
-# identidade da linha: sai de data_hora, entao nao muda o resultado do casamento.
+# anomesdia vem no ON junto da chave, mesmo sem fazer parte da identidade da
+# linha (sai de data_hora, entao nao muda o resultado do casamento). ele esta
+# ali pela poda: o Iceberg guarda min/max por coluna em cada arquivo, e com os
+# valores de anomesdia do lote ele descarta no plano os arquivos do destino que
+# nao podem colidir, em vez de ler a tabela inteira.
 #
 # so tem clausula NOT MATCHED, entao nenhuma linha existente e reescrita, o
 # commit e um append de snapshot. o MERGE nao deduplica a origem: quem garante
