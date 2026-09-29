@@ -12,3 +12,8 @@ output "glue_job_diario_name" {
   description = "Nome do job da bronze, usado no aws glue start-job-run"
   value       = module.bronze_processamento_diario.job_name
 }
+
+output "glue_job_silver_diario_name" {
+  description = "Nome do job da silver, usado no aws glue start-job-run"
+  value       = module.silver_processamento_diario.job_name
+}

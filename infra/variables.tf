@@ -160,3 +160,9 @@ variable "glue_job_name_bronze_diario" {
   description = "Nome do job que processa a ingestao diaria na bronze"
   default     = "bronze-processamento-diario"
 }
+
+variable "glue_job_name_silver_diario" {
+  type        = string
+  description = "Nome do job que processa a bronze para a silver"
+  default     = "silver-processamento-diario"
+}
