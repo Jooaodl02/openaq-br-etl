@@ -166,3 +166,9 @@ variable "glue_job_name_silver_diario" {
   description = "Nome do job que processa a bronze para a silver"
   default     = "silver-processamento-diario"
 }
+
+variable "silver_janela_dias" {
+  type        = string
+  description = "Dias de data_ingestao da bronze lidos pela silver por execucao. Acompanha o days_back da Lambda"
+  default     = "3"
+}

@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from awsglue.context import GlueContext
@@ -7,12 +7,18 @@ from awsglue.job import Job
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from pyspark.sql import functions as F
-from pyspark.sql.utils import AnalysisException
 
 # vem do default_arguments do job, em infra/silver.tf
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "BUCKET_NAME", "DATABASE_BRONZE", "DATABASE_SILVER", "TABLE_NAME"],
+    [
+        "JOB_NAME",
+        "BUCKET_NAME",
+        "DATABASE_BRONZE",
+        "DATABASE_SILVER",
+        "TABLE_NAME",
+        "JANELA_DIAS",
+    ],
 )
 
 sc = SparkContext.getOrCreate()
@@ -21,45 +27,51 @@ spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args["JOB_NAME"], args)
 
-spark.conf.set("hive.exec.dynamic.partition.mode", "nonstrict")
 spark.conf.set("spark.sql.session.timeZone", "America/Sao_Paulo")
 
-TABELA_BRONZE = "{db}.{table}".format(db=args["DATABASE_BRONZE"], table=args["TABLE_NAME"])
-TABELA_SILVER = "{db}.{table}".format(db=args["DATABASE_SILVER"], table=args["TABLE_NAME"])
+# a silver e Iceberg e vive no catalogo glue_catalog, montado no --conf do job.
+# sem esse prefixo o Spark procura no catalogo Hive e nao acha a tabela
+TABELA_SILVER = "glue_catalog.{db}.{table}".format(
+    db=args["DATABASE_SILVER"], table=args["TABLE_NAME"]
+)
+
+# quantos dias de data_ingestao da bronze entram nesta execucao. 0 le a bronze
+# inteira, que e o caso da primeira carga:
+#   aws glue start-job-run --job-name silver-processamento-diario \
+#     --arguments '--JANELA_DIAS=0'
+JANELA_DIAS = int(args["JANELA_DIAS"])
 
 
-def data_hoje():
-    return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d")
+def predicado_ingestao():
+    """Recorte de particao usado na leitura da bronze.
+
+    A bronze e particionada por data_ingestao, entao o filtro entra como
+    push_down_predicate e corta particao antes da leitura, nao depois. Quem
+    garante que nada entre duas vezes continua sendo o MERGE; a janela so
+    evita reler todo o historico a cada execucao.
+    """
+    if JANELA_DIAS <= 0:
+        return ""
+
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    limite = hoje - timedelta(days=JANELA_DIAS - 1)
+    return "data_ingestao >= '{d}'".format(d=limite.isoformat())
 
 
 df_bronze = glueContext.create_dynamic_frame.from_catalog(
     database=args["DATABASE_BRONZE"],
     table_name=args["TABLE_NAME"],
-    push_down_predicate="",
+    push_down_predicate=predicado_ingestao(),
 ).toDF()
 
 ##tira duplicados da tabela bronze, caso haja algum
 df_bronze = df_bronze.dropDuplicates(["sensors_id", "datetime"])
 
 
-## seleciona os id's e datetimes que já estão na tabela silver
-## (a silver já está em portugues, por isso os nomes diferem da bronze)
-df_silver = (
-    spark.table(f"{args['DATABASE_SILVER']}.{args['TABLE_NAME']}")
-         .select(
-             F.col("id_sensor").alias("sensors_id"),
-             F.col("data_hora").alias("datetime"),
-         )
-)
-
-## traz só quem esta na bronze (sem duplicados) e não esta na silver
-df_novos = df_bronze.join(df_silver, on=["sensors_id", "datetime"], how="left_anti")
-
-
 # o id 3911519 traz leituras de Caji (BA) e de Toronto sob o mesmo id; so a
 # estacao brasileira fica, o resto do id sai da silver. o filtro olha o nome cru
 # porque a partir daqui o nome passa a vir do id, nao do que a API mandou
-df_novos = df_novos.filter(
+df_lote = df_bronze.filter(
     (F.col("location_id") != 3911519)
     | F.col("location").isin("Parque Vida Nova, Caji", "Parque Vida Nova, Caji-3892884")
 )
@@ -142,13 +154,13 @@ descricao = (
      .otherwise(F.col("parameter"))
 )
 
-## renomeia as colunas da bronze para portugues e monta a descricao
-df_novos = df_novos.select(
+## renomeia as colunas da bronze para portugues e monta a descricao.
+## os nomes tem que bater com os da tabela: o INSERT * do MERGE casa por nome
+df_lote = df_lote.select(
     F.col("location_id").alias("id_localizacao"),
     F.col("sensors_id").alias("id_sensor"),
     localizacao.alias("localizacao"),
     F.col("datetime").alias("data_hora"),
-    F.date_format(F.col("datetime"), "yyyyMMdd").cast("int").alias("anomesdia"),
     F.col("lat").alias("latitude"),
     F.col("lon").alias("longitude"),
     F.col("parameter").alias("parametro"),
@@ -156,14 +168,32 @@ df_novos = df_novos.select(
     F.col("units").alias("unidade"),
     F.col("value").alias("valor"),
     F.col("tipo_ingestao"),
+    F.date_format(F.col("datetime"), "yyyyMMdd").cast("int").alias("anomesdia"),
     F.col("data_ingestao"),
 )
 
+df_lote.createOrReplaceTempView("lote")
 
-df_novos.write \
-  .mode("append") \
-  .format("hive") \
-  .partitionBy("data_ingestao") \
-  .saveAsTable(TABELA_SILVER)
+# MERGE INTO no lugar de anti-join + append: a chave da silver e
+# (id_sensor, data_hora), e so entra o que ainda nao esta la.
+#
+# anomesdia vem no ON junto da chave, e e a primeira particao da tabela. com
+# ele o Iceberg descobre no plano quais arquivos do destino podem colidir com
+# o lote e le somente esses, em vez da tabela inteira. ele nao faz parte da
+# identidade da linha: sai de data_hora, entao nao muda o resultado do casamento.
+#
+# so tem clausula NOT MATCHED, entao nenhuma linha existente e reescrita, o
+# commit e um append de snapshot. o MERGE nao deduplica a origem: quem garante
+# isso e o dropDuplicates la em cima
+spark.sql(
+    """
+    MERGE INTO {tabela} AS destino
+    USING lote AS origem
+       ON destino.anomesdia = origem.anomesdia
+      AND destino.id_sensor = origem.id_sensor
+      AND destino.data_hora = origem.data_hora
+    WHEN NOT MATCHED THEN INSERT *
+    """.format(tabela=TABELA_SILVER)
+)
 
 job.commit()

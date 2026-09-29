@@ -6,11 +6,12 @@ resource "aws_glue_catalog_database" "silver" {
   location_uri = "s3://${aws_s3_bucket.bucket-etl.bucket}/${var.silver_prefix}/"
 }
 
-# Iceberg, e nao external table como na bronze: a silver recebe append diario
-# com anti-join contra ela mesma, e o Iceberg resolve isso sem MSCK nem
-# reparticionamento manual. o open_table_format_input manda o Glue criar o
-# metadata inicial (o metadata.json em silver/openaq/metadata/), senao a tabela
-# nasce sem metadata_location e o Spark nao consegue abrir.
+# Iceberg, e nao external table como na bronze: a carga diaria e incremental
+# via MERGE INTO, que precisa de row-level operation na tabela, e o Iceberg
+# resolve isso sem MSCK nem reparticionamento manual. o open_table_format_input
+# manda o Glue criar o metadata inicial (o metadata.json em
+# silver/openaq/metadata/), senao a tabela nasce sem metadata_location e o
+# Spark nao consegue abrir.
 resource "aws_glue_catalog_table" "openaq_silver" {
   name          = var.nome_base
   database_name = aws_glue_catalog_database.silver.name
@@ -125,6 +126,10 @@ module "silver_processamento_diario" {
     "--DATABASE_BRONZE" = aws_glue_catalog_database.bronze.name
     "--DATABASE_SILVER" = aws_glue_catalog_database.silver.name
     "--TABLE_NAME"      = aws_glue_catalog_table.openaq_silver.name
+
+    # dias de data_ingestao da bronze lidos por execucao. na primeira carga,
+    # sobrescrever com --JANELA_DIAS=0 no start-job-run para ler o historico
+    "--JANELA_DIAS" = var.silver_janela_dias
 
     # carrega as libs do Iceberg no classpath do job
     "--datalake-formats" = "iceberg"
