@@ -169,7 +169,7 @@ df_lote = df_lote.select(
     F.col("value").alias("valor"),
     F.col("tipo_ingestao"),
     F.date_format(F.col("datetime"), "yyyyMMdd").cast("int").alias("anomesdia"),
-    F.col("data_ingestao"),
+    F.col("data_ingestao").cast("date").alias("data_ingestao"),
 )
 
 df_lote.createOrReplaceTempView("lote")
