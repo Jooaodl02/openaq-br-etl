@@ -37,8 +37,10 @@ TABELA_SILVER = "glue_catalog.{db}.{table}".format(
 
 # quantos dias de data_ingestao da bronze entram nesta execucao. 0 le a bronze
 # inteira, que e o caso da primeira carga:
+# o = depois de --arguments e obrigatorio: sem ele o CLI le o
+# --JANELA_DIAS como uma opcao dele e nem chama a API
 #   aws glue start-job-run --job-name silver-processamento-diario \
-#     --arguments '--JANELA_DIAS=0'
+#     --arguments='--JANELA_DIAS=0'
 JANELA_DIAS = int(args["JANELA_DIAS"])
 
 
